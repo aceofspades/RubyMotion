@@ -300,15 +300,25 @@ EOS
       @vendor_projects.delete_if { |x| x.path == path }
     end
 
-    def file_dependencies(file)
+    def file_dependencies(file, prev = {})
       deps = @dependencies[file]
+      prev[file] = true
       if deps
-        deps = deps.map { |x| file_dependencies(x) }
+        deps = deps.map { |x|
+          if prev[x]
+            msg = "Circular dependency detected #{file} => #{x}"
+            App.warn msg
+            deps = []
+            #fail msg
+          else
+            file_dependencies(x, prev)
+          end
+        }
       else
-        deps = [] 
+        deps = []
       end
       deps << file
-      deps 
+      deps
     end
 
     def ordered_build_files
