@@ -51,7 +51,7 @@ module Motion; module Project
       :weak_frameworks, :framework_search_paths, :libs, :delegate_class, :name, :build_dir,
       :resources_dirs, :specs_dir, :identifier, :codesign_certificate,
       :provisioning_profile, :device_family, :interface_orientations, :version,
-      :short_version, :icons, :prerendered_icon, :background_modes, :seed_id,
+      :short_version, :icons, :prerendered_icon, :simulator_env, :background_modes, :seed_id,
       :entitlements, :fonts, :status_bar_style, :motiondir, :detect_dependencies
 
     # Internal only.
@@ -81,6 +81,7 @@ module Motion; module Project
       @background_modes = []
       @icons = []
       @prerendered_icon = false
+      @simulator_env = nil
       @vendor_projects = []
       @entitlements = {}
       @spec_mode = false
@@ -276,7 +277,7 @@ EOS
 
     def files_dependencies(deps_hash)
       res_path = lambda do |x|
-        path = /^\./.match(x) ? x : File.join('.', x)
+        path = /^\.?\//.match(x) ? x : File.join('.', x)
         unless @files.flatten.include?(path)
           App.fail "Can't resolve dependency `#{x}'"
         end
@@ -329,21 +330,21 @@ EOS
     def frameworks_dependencies
       @frameworks_dependencies ||= begin
         # Compute the list of frameworks, including dependencies, that the project uses.
-        deps = []
+        deps = frameworks.dup.uniq
         slf = File.join(sdk('iPhoneSimulator'), 'System', 'Library', 'Frameworks')
-        frameworks.each do |framework|
+        deps.each do |framework|
           framework_path = File.join(slf, framework + '.framework', framework)
           if File.exist?(framework_path)
             `#{locate_binary('otool')} -L \"#{framework_path}\"`.scan(/\t([^\s]+)\s\(/).each do |dep|
               # Only care about public, non-umbrella frameworks (for now).
               if md = dep[0].match(/^\/System\/Library\/Frameworks\/(.+)\.framework\/(.+)$/) and md[1] == md[2]
                 deps << md[1]
+                deps.uniq!
               end
             end
           end
-          deps << framework
         end
-        deps.uniq!
+
         if @framework_search_paths.empty?
           deps = deps.select { |dep| File.exist?(File.join(datadir, 'BridgeSupport', dep + '.bridgesupport')) }
         end
@@ -378,10 +379,15 @@ EOS
       end
     end
 
+    def spec_core_files
+      @spec_core_files ||= begin
+        # Core library + core helpers.
+        Dir.chdir(File.join(File.dirname(__FILE__), '..')) { (['spec.rb'] + Dir.glob(File.join('spec', 'helpers', '*.rb'))).map { |x| File.expand_path(x) } }
+      end
+    end
+
     def spec_files
       @spec_files ||= begin
-        # Core library + core helpers.
-        core = Dir.chdir(File.join(File.dirname(__FILE__), '..')) { (['spec.rb'] + Dir.glob(File.join('spec', 'helpers', '*.rb'))).map { |x| File.expand_path(x) } }
         # Project helpers.
         helpers = Dir.glob(File.join(specs_dir, 'helpers', '*.rb'))
         # Project specs.
@@ -392,7 +398,7 @@ EOS
           files_filter.map! { |x| File.exist?(x) ? File.expand_path(x) : x }
           specs.delete_if { |x| [File.expand_path(x), File.basename(x, '.rb'), File.basename(x, '_spec.rb')].none? { |p| files_filter.include?(p) } }
         end
-        core + helpers + specs
+        spec_core_files + helpers + specs
       end
     end
 

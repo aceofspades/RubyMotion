@@ -58,8 +58,12 @@ namespace :build do
   end
 end
 
+desc "Build and run the simulator"
+task :simulator => ['build:simulator', 'sim'] do
+end
+
 desc "Run the simulator"
-task :simulator => ['build:simulator'] do
+task :sim do
   app = App.config.app_bundle('iPhoneSimulator')
   target = ENV['target'] || App.config.sdk_version
 
@@ -93,12 +97,14 @@ task :simulator => ['build:simulator'] do
 
   # Launch the simulator.
   xcode = App.config.xcode_dir
-  env = "DYLD_FRAMEWORK_PATH=\"#{xcode}/../Frameworks\":\"#{xcode}/../OtherFrameworks\""
-  env << ' SIM_SPEC_MODE=1' if App.config.spec_mode
+  env = {"DYLD_FRAMEWORK_PATH" => %Q["#{xcode}/../Frameworks":"#{xcode}/../OtherFrameworks"]}
+  env['SIM_SPEC_MODE'] = 1 if App.config.spec_mode
+  env.merge!(App.config.simulator_env) if App.config.simulator_env
   sim = File.join(App.config.bindir, 'sim')
   debug = (ENV['debug'] ? 1 : (App.config.spec_mode ? '0' : '2'))
   App.info 'Simulate', app
   at_exit { system("stty echo") } if $stdout.tty? # Just in case the simulator launcher crashes and leaves the terminal without echo.
+  env = env.map{ |k, v| %Q[#{k}=#{v}] }.join(' ')
   sh "#{env} #{sim} #{debug} #{family_int} #{target} \"#{xcode}\" \"#{app}\""
 end
 
