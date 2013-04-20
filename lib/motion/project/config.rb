@@ -300,18 +300,30 @@ EOS
       @vendor_projects.delete_if { |x| x.path == path }
     end
 
-    def file_dependencies(file, prev = {})
+    def file_dependencies(file, options = {})
       deps = @dependencies[file]
-      prev[file] = true
+      options[:prev] ||= {}
+      options[:depth] ||= 0
       if deps
         deps = deps.map { |x|
-          if prev[x]
-            msg = "Circular dependency detected #{file} => #{x}"
-            App.warn msg
+          if options[:prev][x]
+            @circ_errors ||= 0
+            @circ_errors += 1
+            if @circ_errors < 20
+              msg = "Circular dependency detected #{file} => #{x}"
+              App.warn msg
+            elsif @circ_errors == 20
+              msg = "Remaining circular dependencies suppressed."
+              App.warn msg
+            end
+          end
+          if !ENV['RUBYMOTION_CIRC_DEP_DISABLE'] && options[:prev][x] #&& options[:depth] > 0
             deps = []
             #fail msg
           else
-            file_dependencies(x, prev)
+            options[:prev][file] = true
+            options[:prev][:depth] = options[:depth] + 1
+            file_dependencies(x, options)
           end
         }
       else
